@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestão de RH - Cloud System</title>
+    <style>
+        :root { --primary: #2c3e50; --secondary: #3498db; --bg: #f4f7f6; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg); margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: var(--primary); margin-bottom: 30px; border-bottom: 2px solid var(--secondary); padding-bottom: 10px; }
+        
+        /* Abas de Navegação */
+        .tabs { display: flex; justify-content: center; margin-bottom: 20px; }
+        .tab-btn { background: none; border: none; padding: 10px 20px; cursor: pointer; font-size: 16px; border-bottom: 3px solid transparent; color: #777; }
+        .tab-btn.active { border-bottom-color: var(--secondary); color: var(--primary); font-weight: bold; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* Formulários */
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: 600; color: #333; }
+        input, select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box; }
+        input:focus { border-color: var(--secondary); outline: none; }
+        
+        .btn { width: 100%; padding: 12px; background-color: var(--secondary); color: white; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; transition: 0.3s; }
+        .btn:hover { background-color: #2980b9; }
+        .btn-search { background-color: var(--primary); margin-top: 10px;}
+
+        /* Loading e Mensagens */
+        #loading { display: none; text-align: center; margin: 10px 0; color: var(--secondary); font-weight: bold; }
+        .card-result { background: #eaf2f8; padding: 15px; border-radius: 5px; margin-top: 20px; border-left: 5px solid var(--secondary); display: none; }
+        
+        /* Responsivo */
+        @media (max-width: 600px) { .container { padding: 15px; } }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Gestão de RH Integrada</h1>
+    
+    <div class="tabs">
+        <button class="tab-btn active" onclick="openTab('cadastro')">Novo Cadastro</button>
+        <button class="tab-btn" onclick="openTab('consulta')">Consultar Base</button>
+    </div>
+
+    <div id="loading">Processando... aguarde.</div>
+
+    <div id="cadastro" class="tab-content active">
+        <form id="formCadastro">
+            <div class="form-group">
+                <label>Tipo de Registro:</label>
+                <select id="tipo" required>
+                    <option value="Candidato">Candidato</option>
+                    <option value="Empregado">Empregado</option>
+                    <option value="Vaga">Vaga</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>CPF (Apenas números - ID Único):</label>
+                <input type="text" id="cpf" placeholder="00000000000" maxlength="11" required>
+            </div>
+
+            <div class="form-group">
+                <label>Nome Completo / Título da Vaga:</label>
+                <input type="text" id="nome" required>
+            </div>
+
+            <div class="form-group">
+                <label>Cargo / Função:</label>
+                <input type="text" id="cargo">
+            </div>
+
+            <div class="form-group">
+                <label>CEP (Busca Automática):</label>
+                <input type="text" id="cep" placeholder="00000-000" maxlength="9" onblur="buscarCep(this.value)">
+            </div>
+
+            <div class="form-group">
+                <label>Endereço Completo:</label>
+                <input type="text" id="endereco" readonly style="background-color: #eee;">
+            </div>
+
+            <button type="submit" class="btn">Salvar no Google Sheets</button>
+        </form>
+    </div>
+
+    <div id="consulta" class="tab-content">
+        <div class="form-group">
+            <label>Digite o CPF para buscar:</label>
+            <input type="text" id="cpfBusca" placeholder="Apenas números">
+            <button onclick="buscarDados()" class="btn btn-search">Pesquisar</button>
+        </div>
+
+        <div id="resultadoBusca" class="card-result">
+            <h3>Dados Encontrados:</h3>
+            <p><strong>Nome:</strong> <span id="resNome"></span></p>
+            <p><strong>Cargo:</strong> <span id="resCargo"></span></p>
+            <p><strong>Tipo:</strong> <span id="resTipo"></span></p>
+            <p><strong>Local:</strong> <span id="resEndereco"></span></p>
+        </div>
+    </div>
+</div>
+
+<script>
+    // -------------------------------------------------------
+    // CONFIGURAÇÃO: COLAR SUA URL DO APP SCRIPT AQUI ABAIXO
+    // -------------------------------------------------------
+    const SCRIPT_URL = "COLE_AQUI_SUA_URL_DO_GOOGLE_APPS_SCRIPT"; 
+
+    // Função para alternar abas
+    function openTab(tabName) {
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById(tabName).classList.add('active');
+        event.currentTarget.classList.add('active');
+    }
+
+    // 1. API DE CEP (ViaCEP)
+    function buscarCep(cep) {
+        cep = cep.replace(/\D/g, '');
+        if (cep != "") {
+            document.getElementById('endereco').value = "Buscando...";
+            fetch(`https://viacep.com.br/ws/${cep}/json/`)
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.erro) {
+                        document.getElementById('endereco').value = `${data.logradouro}, ${data.bairro}, ${data.localidade} - ${data.uf}`;
+                    } else {
+                        alert("CEP não encontrado.");
+                        document.getElementById('endereco').value = "";
+                    }
+                })
+                .catch(() => alert("Erro ao buscar CEP."));
+        }
+    }
+
+    // 2. SALVAR DADOS (POST para Google Sheets)
+    document.getElementById('formCadastro').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        if(SCRIPT_URL.includes("COLE_AQUI")) {
+            alert("Erro: Você não configurou a URL do Script no código HTML!");
+            return;
+        }
+
+        const loading = document.getElementById('loading');
+        loading.style.display = 'block';
+
+        const dados = {
+            cpf: document.getElementById('cpf').value,
+            nome: document.getElementById('nome').value,
+            cargo: document.getElementById('cargo').value,
+            cep: document.getElementById('cep').value,
+            endereco: document.getElementById('endereco').value,
+            tipo: document.getElementById('tipo').value
+        };
+
+        // O Google Apps Script requer um "hack" de no-cors ou envio como stringify no body
+        fetch(SCRIPT_URL + "?action=save", {
+            method: "POST",
+            body: JSON.stringify(dados)
+        })
+        .then(response => response.json())
+        .then(data => {
+            loading.style.display = 'none';
+            if(data.status === "sucesso") {
+                alert("Dados salvos com sucesso no Google Drive!");
+                document.getElementById('formCadastro').reset();
+            }
+        })
+        .catch(error => {
+            loading.style.display = 'none';
+            console.error('Erro:', error);
+            alert("Ocorreu um erro. Verifique o console (F12) ou se a URL do script está correta.");
+        });
+    });
+
+    // 3. BUSCAR DADOS (GET do Google Sheets)
+    function buscarDados() {
+        const cpf = document.getElementById('cpfBusca').value;
+        const resultCard = document.getElementById('resultadoBusca');
+        const loading = document.getElementById('loading');
+
+        if(!cpf) return alert("Digite um CPF");
+        
+        loading.style.display = 'block';
+        resultCard.style.display = 'none';
+
+        fetch(`${SCRIPT_URL}?action=search&cpf=${cpf}`)
+        .then(response => response.json())
+        .then(data => {
+            loading.style.display = 'none';
+            if (data == "Não encontrado") {
+                alert("Candidato/Empregado não encontrado.");
+            } else {
+                document.getElementById('resNome').innerText = data.nome;
+                document.getElementById('resCargo').innerText = data.cargo;
+                document.getElementById('resTipo').innerText = data.tipo;
+                document.getElementById('resEndereco').innerText = data.endereco;
+                resultCard.style.display = 'block';
+            }
+        })
+        .catch(error => {
+            loading.style.display = 'none';
+            alert("Erro na busca. Verifique a conexão.");
+        });
+    }
+</script>
+
+</body>
+</html>
